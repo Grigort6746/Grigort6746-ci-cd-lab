@@ -1,0 +1,66 @@
+
+name: Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate HTML
+        run: npx --yes htmlhint index.html
+
+      - name: Build Docker image
+        run: docker build -t ci-cd-test .
+
+      - name: Smoke test container
+        run: |
+          docker run -d --name test-container -p 8080:80 ci-cd-test
+          sleep 3
+          curl --fail --silent http://localhost:8080 | grep -q "CI/CD Laboratory"
+          echo "OK"
+
+  release:
+    name: release
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        run: |
+          docker build -t ghcr.io/grigort6746/grigort6746-ci-cd-lab:latest .
+          docker push ghcr.io/grigort6746/grigort6746-ci-cd-lab:latest
